@@ -8,19 +8,28 @@ import { and, eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
+function canManageCredentials(role: string) {
+  return role === "owner" || role === "admin";
+}
+
 export async function GET(req: Request) {
   const session = await getCurrentSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const requested = new URL(req.url).searchParams.get("providerId");
   const providers = requested ? PROVIDERS.filter((p) => p.id === requested) : PROVIDERS;
-  const statuses = await Promise.all(providers.map((p) => credentialStatus(session.organizationId, p.id)));
-  return Response.json({ credentials: statuses });
+  return Response.json({
+    credentials: await Promise.all(providers.map((p) => credentialStatus(session.organizationId, p.id))),
+    canManage: canManageCredentials(session.membershipRole),
+  });
 }
 
 export async function PUT(req: Request) {
   const session = await getCurrentSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canManageCredentials(session.membershipRole)) {
+    return Response.json({ error: "Workspace owner or admin access is required" }, { status: 403 });
+  }
 
   const body = (await req.json().catch(() => ({}))) as { providerId?: string; secrets?: Record<string, string> };
   if (!body.providerId || !body.secrets || typeof body.secrets !== "object") {
@@ -58,6 +67,9 @@ export async function PUT(req: Request) {
 export async function DELETE(req: Request) {
   const session = await getCurrentSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canManageCredentials(session.membershipRole)) {
+    return Response.json({ error: "Workspace owner or admin access is required" }, { status: 403 });
+  }
 
   const body = (await req.json().catch(() => ({}))) as { providerId?: string };
   if (!body.providerId) return Response.json({ error: "providerId is required" }, { status: 400 });

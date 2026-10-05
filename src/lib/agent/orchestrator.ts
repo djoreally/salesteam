@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { listings, opportunities, products, runSteps, runs, variants } from "@/db/schema";
-import { commerce, providerMode } from "@/lib/commerce/control-plane";
+import { commerce } from "@/lib/commerce/control-plane";
 import { getProvider } from "@/lib/commerce/registry";
 import type { NormalizedProduct } from "@/lib/commerce/types";
 import { eq } from "drizzle-orm";
@@ -107,7 +107,7 @@ export async function executeGoal(input: RunInput): Promise<number> {
     const upload = await commerce.uploadMedia(pod, normalized, callContext);
     const podCreate = await commerce.createProduct(pod, normalized, callContext);
     const podPublish = await commerce.publish(pod, normalized, podCreate.externalId ?? "", callContext);
-    await db.insert(listings).values({ organizationId, productId: productRow.id, providerId: pod, externalId: podCreate.externalId, url: podPublish.url, status: podPublish.ok ? "published" : "failed", price: plan.base, message: `manufacturing route · ${providerMode(pod)}` });
+    await db.insert(listings).values({ organizationId, productId: productRow.id, providerId: pod, externalId: podCreate.externalId, url: podPublish.url, status: podPublish.ok ? "published" : "failed", price: plan.base, message: `manufacturing route · ${podPublish.mode}` });
     await step("Fulfillment Router", "register_manufacturer", `${getProvider(pod).name} product ${podCreate.externalId} registered and ready to manufacture`, { uploadRequest: upload.request, createRequest: podCreate.request, publishRequest: podPublish.request, mode: podCreate.mode });
 
     const published: { provider: string; externalId: string; url: string; price: number; mode: string }[] = [];
@@ -119,7 +119,7 @@ export async function executeGoal(input: RunInput): Promise<number> {
       await commerce.setPrice(channel, create.externalId ?? "", channelPrice, callContext);
       await commerce.setInventory(channel, create.externalId ?? "", 250, callContext);
       const pub = await commerce.publish(channel, priced, create.externalId ?? "", callContext);
-      await db.insert(listings).values({ organizationId, productId: productRow.id, providerId: channel, externalId: create.externalId, url: pub.url, status: pub.ok ? "published" : "failed", price: channelPrice, message: `${providerMode(channel)} · net margin ${(100 * (plan.perChannel[channel]?.netMargin ?? 0)).toFixed(1)}%` });
+      await db.insert(listings).values({ organizationId, productId: productRow.id, providerId: channel, externalId: create.externalId, url: pub.url, status: pub.ok ? "published" : "failed", price: channelPrice, message: `${pub.mode} · net margin ${(100 * (plan.perChannel[channel]?.netMargin ?? 0)).toFixed(1)}%` });
       published.push({ provider: channel, externalId: create.externalId ?? "", url: pub.url ?? "", price: channelPrice, mode: pub.mode });
       await step("Channel Publisher", `publish:${channel}`, `${getProvider(channel).name} → ${pub.ok ? "live" : "failed"} at $${channelPrice.toFixed(2)} (${pub.mode})`, { provider: channel, protocol: getProvider(channel).protocol, calls: [create.request, pub.request], externalId: create.externalId, url: pub.url }, pub.ok ? "ok" : "error");
     }
@@ -129,7 +129,7 @@ export async function executeGoal(input: RunInput): Promise<number> {
       productId: productRow.id, title: normalized.title, concept: winner.concept, score: winner.score, price: plan.base,
       landedCost: Number(landed.toFixed(2)), grossMargin: Number((((plan.base - landed) / plan.base) * 100).toFixed(1)), channels: published,
       manufacturer: { provider: pod, blueprint: blueprint.name, externalId: podCreate.externalId }, conceptsEvaluated: opps.length,
-      apiCallsMode: providerMode(pod), elapsedMs: Date.now() - started,
+      apiCallsMode: podCreate.mode, elapsedMs: Date.now() - started,
     };
     await step("Commerce Brain", "complete", `Launched "${normalized.title}" to ${published.length} channels in ${((Date.now() - started) / 1000).toFixed(1)}s`, summary);
     await db.update(runs).set({ status: "succeeded", completedAt: new Date(), summary, fulfillmentProvider: pod }).where(eq(runs.id, run.id));

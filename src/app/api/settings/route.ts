@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { organizations, settings } from "@/db/infrastructure";
 import { getCurrentSession } from "@/lib/auth/session";
@@ -21,7 +21,7 @@ export async function GET() {
 export async function PUT(request: Request) {
   const session = await getCurrentSession();
   if (!session) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-  if (!['owner', 'admin'].includes(session.membershipRole)) return NextResponse.json({ error: "Owner or admin access required." }, { status: 403 });
+  if (!["owner", "admin"].includes(session.membershipRole)) return NextResponse.json({ error: "Owner or admin access required." }, { status: 403 });
 
   const body = await request.json();
   const organizationName = String(body.organizationName ?? "").trim();
@@ -34,12 +34,13 @@ export async function PUT(request: Request) {
 
     for (const [key, value] of Object.entries(values)) {
       if (!/^[a-z0-9_.-]{1,80}$/i.test(key)) continue;
-      const [existing] = await tx.select().from(settings).where(and(eq(settings.organizationId, session.organizationId), eq(settings.key, key)));
-      if (existing) {
-        await tx.update(settings).set({ value, updatedAt: new Date() }).where(eq(settings.id, existing.id));
-      } else {
-        await tx.insert(settings).values({ organizationId: session.organizationId, key, value });
-      }
+      await tx
+        .insert(settings)
+        .values({ organizationId: session.organizationId, key, value, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: [settings.organizationId, settings.key],
+          set: { value, updatedAt: new Date() },
+        });
     }
   });
 

@@ -30,14 +30,32 @@ function sandbox(providerId: string, credentials: Record<string, string>): AuthR
   return { ok: false, mode: "sandbox", error: `Missing ${missing.join(", ")}` };
 }
 
+function invalid(error: string): AuthResult {
+  return { ok: false, mode: "sandbox", error };
+}
+
+function normalizeHttpsOrigin(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") return null;
+    if (url.username || url.password || url.search || url.hash) return null;
+    return url.origin + (url.pathname === "/" ? "" : url.pathname.replace(/\/$/, ""));
+  } catch {
+    return null;
+  }
+}
+
 const transports: Record<string, AuthTransport> = {
   shopify: {
     id: "shopify",
     provider: getProvider("shopify"),
     authenticate(credentials) {
       if (!complete("shopify", credentials)) return sandbox("shopify", credentials);
-      const raw = credentials.SHOPIFY_SHOP.replace(/^https?:\/\//, "").replace(/\/$/, "");
-      const host = raw.includes(".myshopify.com") ? raw : `${raw}.myshopify.com`;
+      const raw = credentials.SHOPIFY_SHOP.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const host = raw.endsWith(".myshopify.com") ? raw : `${raw}.myshopify.com`;
+      if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(host)) {
+        return invalid("Invalid Shopify shop host");
+      }
       return {
         ok: true,
         mode: "live",
@@ -52,7 +70,8 @@ const transports: Record<string, AuthTransport> = {
     provider: getProvider("woocommerce"),
     authenticate(credentials) {
       if (!complete("woocommerce", credentials)) return sandbox("woocommerce", credentials);
-      const store = credentials.WOO_STORE_URL.replace(/\/$/, "");
+      const store = normalizeHttpsOrigin(credentials.WOO_STORE_URL.trim());
+      if (!store) return invalid("WooCommerce store URL must be a valid HTTPS URL");
       return {
         ok: true,
         mode: "live",
