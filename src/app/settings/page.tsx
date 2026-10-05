@@ -21,8 +21,8 @@ export default async function SettingsPage() {
   if (!organization) redirect("/login");
   const rows = await db.select().from(settings).where(eq(settings.organizationId, session.organizationId));
   const values = Object.fromEntries(rows.map((row) => [row.key, row.value]));
-  const selectedChannels = Array.isArray(values["workspace.salesChannels"]) ? values["workspace.salesChannels"] as string[] : [];
-  const selectedFulfillment = Array.isArray(values["workspace.fulfillmentProviders"]) ? values["workspace.fulfillmentProviders"] as string[] : [];
+  const selectedChannels = Array.isArray(values["commerce.enabled_channels"]) ? values["commerce.enabled_channels"] as string[] : [];
+  const selectedFulfillment = Array.isArray(values["commerce.fulfillment_providers"]) ? values["commerce.fulfillment_providers"] as string[] : [];
   const selectedProviderIds = new Set([...selectedChannels, ...selectedFulfillment]);
 
   const providerRows = PROVIDERS.filter((provider) => provider.envKeys.length > 0 && (selectedProviderIds.size === 0 || selectedProviderIds.has(provider.id)))
@@ -43,12 +43,7 @@ export default async function SettingsPage() {
         right={<Link href="/onboarding" className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">Manage stores & fulfillment</Link>}
       />
       <AccountSettings name={session.userName} email={session.userEmail} />
-      <SettingsForm
-        organizationName={organization.name}
-        plan={organization.plan}
-        status={organization.status}
-        initialSettings={values}
-      />
+      <SettingsForm organizationName={organization.name} plan={organization.plan} status={organization.status} initialSettings={values} />
       <div className="px-6 pb-2"><h2 className="text-sm font-semibold text-zinc-200">Connected account credentials</h2><p className="mt-1 text-xs text-zinc-500">Only the stores and fulfillment services selected for this workspace are shown here. Secrets remain encrypted and are never returned to the browser.</p></div>
       <CredentialManager initial={credentials} />
     </div>
