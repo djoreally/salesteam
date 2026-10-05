@@ -4,7 +4,7 @@ import { getAdapter, type AdapterContext } from "./adapters";
 import { getProvider } from "./registry";
 import { providerIsAuthenticated } from "@/lib/auth/transports";
 import type { Capability,FulfillmentResult,NormalizedProduct,ProviderRequest,ProviderResult } from "./types";
-export interface CallContext { runId?:number|null; shopRef?:string; locationId?:string; }
+export interface CallContext { organizationId?:number|null; runId?:number|null; shopRef?:string; locationId?:string; }
 function hashString(s:string){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return Math.abs(h)}
 export function providerMode(providerId:string):"live"|"sandbox" {const p=getProvider(providerId);return p.envKeys.every(k=>Boolean(process.env[k]))?"live":"sandbox";}
 export function missingCredentials(providerId:string){return getProvider(providerId).envKeys.filter(k=>!process.env[k]);}
@@ -16,7 +16,7 @@ async function execute(providerId:string,capability:Capability,request:ProviderR
   try{const url=`${provider.baseUrl.replace(/\/$/,"")}${request.endpoint}`;const res=await fetch(url,{method:request.method,headers:{"content-type":"application/json",...(request.headers??{})},body:request.body?JSON.stringify(request.body):undefined});const data=await res.json().catch(()=>({})) as Record<string,unknown>;result={ok:res.ok,mode,statusCode:res.status,data,request,latencyMs:Date.now()-started};}
   catch(err){result={ok:false,mode,statusCode:599,data:{error:String(err)},request,latencyMs:Date.now()-started,message:String(err)}}
  } else {const s=synth(seed);result={ok:true,mode,statusCode:request.method==="POST"?201:200,externalId:s.externalId,url:s.url,data:s.data,request,latencyMs:40+(seed%260),message:`sandbox: missing ${missingCredentials(providerId).join(", ")||"credentials"}`};}
- await db.insert(apiCalls).values({runId:ctx.runId??null,providerId,capability,method:request.method,endpoint:request.endpoint,mode:result.mode,statusCode:result.statusCode,request:(request.body??{}) as Record<string,unknown>,response:result.data,latencyMs:result.latencyMs});return result;
+ await db.insert(apiCalls).values({organizationId:ctx.organizationId??null,runId:ctx.runId??null,providerId,capability,method:request.method,endpoint:request.endpoint,mode:result.mode,statusCode:result.statusCode,request:(request.body??{}) as Record<string,unknown>,response:result.data,latencyMs:result.latencyMs});return result;
 }
 export const commerce={
  async createProduct(providerId:string,product:NormalizedProduct,ctx:CallContext={}){const a=getAdapter(providerId),actx=adapterContext(providerId,ctx);return execute(providerId,"products.write",a.createProduct(product,actx),ctx,seed=>{const ref=a.identify(product,seed);return {externalId:ref.externalId,url:ref.url,data:{id:ref.externalId,handle:product.slug,status:"draft"}}});},

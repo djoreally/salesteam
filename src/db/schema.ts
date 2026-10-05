@@ -13,15 +13,9 @@ import {
 /**
  * Commerce Control Plane schema.
  *
- * 5 planes:
- *  1. Intelligence   (opportunities, research signals)
- *  2. Creation       (product master, designs, SEO, copy)
- *  3. Commerce       (listings, orders, fulfillments, pricing, inventory)
- *  4. Supply         (manufacturing, fulfillment, tracking)
- *  5. Operations     (optimization, analytics, decisions, certification)
- *
- * Everything provider-specific lives in adapters. The database owns
- * the Product Master — not Shopify, not Etsy.
+ * Every tenant-owned table carries organizationId. The column is nullable at
+ * the schema layer for one migration cycle so existing local/test rows can be
+ * backfilled safely; application writes must always supply organizationId.
  */
 
 export const providerState = pgEnum("provider_state", [
@@ -33,6 +27,7 @@ export const providerState = pgEnum("provider_state", [
 
 export const runs = pgTable("runs", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   goal: text("goal").notNull(),
   status: text("status").notNull().default("running"),
   channels: jsonb("channels").$type<string[]>().notNull().default([]),
@@ -44,6 +39,7 @@ export const runs = pgTable("runs", {
 
 export const runSteps = pgTable("run_steps", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   runId: integer("run_id").notNull(),
   idx: integer("idx").notNull(),
   agent: text("agent").notNull(),
@@ -59,6 +55,7 @@ export const runSteps = pgTable("run_steps", {
 
 export const connections = pgTable("connections", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   providerId: text("provider_id").notNull(),
   label: text("label").notNull(),
   state: providerState("state").notNull().default("registered"),
@@ -76,6 +73,7 @@ export const connections = pgTable("connections", {
 
 export const opportunities = pgTable("opportunities", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   runId: integer("run_id"),
   theme: text("theme").notNull(),
   concept: text("concept").notNull(),
@@ -109,6 +107,7 @@ export const researchSources = pgTable("research_sources", {
 
 export const products = pgTable("products", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   runId: integer("run_id"),
   opportunityId: integer("opportunity_id"),
   title: text("title").notNull(),
@@ -130,6 +129,7 @@ export const products = pgTable("products", {
 
 export const variants = pgTable("variants", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   productId: integer("product_id").notNull(),
   masterProductId: text("master_product_id"),
   sku: text("sku").notNull(),
@@ -143,6 +143,7 @@ export const variants = pgTable("variants", {
 
 export const listings = pgTable("listings", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   productId: integer("product_id").notNull(),
   providerId: text("provider_id").notNull(),
   externalId: text("external_id"),
@@ -155,6 +156,7 @@ export const listings = pgTable("listings", {
 
 export const orders = pgTable("orders", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   externalId: text("external_id").notNull(),
   providerId: text("provider_id").notNull(),
   productId: integer("product_id").notNull(),
@@ -175,6 +177,7 @@ export const orders = pgTable("orders", {
 
 export const fulfillments = pgTable("fulfillments", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   orderId: integer("order_id").notNull(),
   providerId: text("provider_id").notNull(),
   externalId: text("external_id").notNull(),
@@ -189,6 +192,7 @@ export const fulfillments = pgTable("fulfillments", {
 
 export const apiCalls = pgTable("api_calls", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   runId: integer("run_id"),
   providerId: text("provider_id").notNull(),
   capability: text("capability").notNull(),
@@ -206,6 +210,7 @@ export const apiCalls = pgTable("api_calls", {
 
 export const decisions = pgTable("decisions", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   productId: integer("product_id"),
   action: text("action").notNull(),
   reason: text("reason").notNull(),
@@ -219,6 +224,7 @@ export const decisions = pgTable("decisions", {
 
 export const providerCertifications = pgTable("provider_certifications", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id"),
   providerId: text("provider_id").notNull(),
   adapterType: text("adapter_type").notNull().default("bespoke"),
   capabilitiesCertified: jsonb("capabilities_certified").$type<string[]>().notNull().default([]),

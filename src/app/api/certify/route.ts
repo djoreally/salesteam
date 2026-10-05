@@ -1,14 +1,16 @@
-import { db } from "@/db";
-import { connections, providerCertifications } from "@/db/schema";
 import { getCertifiedCapabilities, getImplementedCapabilities } from "@/lib/auth/certification";
+import { getCurrentSession } from "@/lib/auth/session";
 import { ensureConnections, ensureCertifications } from "@/lib/bootstrap";
-import { getMilestone, CORE_V1 } from "@/lib/certification/milestones";
+import { CORE_V1 } from "@/lib/certification/milestones";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const conns = await ensureConnections();
-  const certs = await ensureCertifications();
+  const session = await getCurrentSession();
+  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+  const conns = await ensureConnections(session.organizationId);
+  const certs = await ensureCertifications(session.organizationId);
   const certMap = new Map(certs.map((c) => [c.providerId, c]));
 
   const milestoneStatus = {
@@ -20,8 +22,6 @@ export async function GET() {
       const cert = certMap.get(id);
       const implemented = getImplementedCapabilities(id);
       const certified = getCertifiedCapabilities(id);
-      const declaredCaps = implemented.length;
-      const requiredCaps = CORE_V1.requiredCapabilities[id]?.length ?? 0;
       return {
         providerId: id,
         connectionState: conn?.state ?? "missing",
@@ -29,8 +29,8 @@ export async function GET() {
         certified: Boolean(cert?.certified),
         testsPassed: cert?.testsPassed ?? 0,
         testsTotal: cert?.testsTotal ?? 0,
-        capabilitiesImplemented: declaredCaps,
-        capabilitiesRequired: requiredCaps,
+        capabilitiesImplemented: implemented.length,
+        capabilitiesRequired: CORE_V1.requiredCapabilities[id]?.length ?? 0,
         capabilitiesCertified: certified.length,
       };
     }),

@@ -8,6 +8,7 @@ import { buildProduct, candidateBlueprints, chooseBlueprint, planPricing } from 
 import { generateOpportunities, parseGoal } from "./research";
 
 export interface RunInput {
+  organizationId: number;
   goal: string;
   channels: string[];
   podProviders: string[];
@@ -20,9 +21,10 @@ interface StepRecorder {
 
 export async function executeGoal(input: RunInput): Promise<number> {
   const started = Date.now();
+  const organizationId = input.organizationId;
   const [run] = await db
     .insert(runs)
-    .values({ goal: input.goal, channels: input.channels, status: "running" })
+    .values({ organizationId, goal: input.goal, channels: input.channels, status: "running" })
     .returning();
 
   let idx = 0;
@@ -30,6 +32,7 @@ export async function executeGoal(input: RunInput): Promise<number> {
   const step: StepRecorder = async (agent, action, summary, detail, status = "ok") => {
     const now = Date.now();
     await db.insert(runSteps).values({
+      organizationId,
       runId: run.id,
       idx: idx++,
       agent,
@@ -57,6 +60,7 @@ export async function executeGoal(input: RunInput): Promise<number> {
     const landed = blueprint.baseCost + blueprint.shipFirst;
     const opps = generateOpportunities(spec, landed);
     const inserted = await db.insert(opportunities).values(opps.map((o) => ({
+      organizationId,
       runId: run.id, theme: o.theme, concept: o.concept, angle: o.angle, keywords: o.keywords, demand: o.demand, growth: o.growth, margin: o.margin,
       searchVolume: o.searchVolume, socialVelocity: o.socialVelocity, competition: o.competition, score: o.score, riskLevel: o.riskLevel,
       riskNotes: o.riskNotes, signals: o.signals as unknown as Record<string, unknown>, selected: false,
@@ -88,32 +92,34 @@ export async function executeGoal(input: RunInput): Promise<number> {
     await step("Merchandising Agent", "generate_copy_seo", `Wrote title, ${normalized.bullets.length} bullets, description, ${normalized.tags.length} tags and SEO block`, { title: normalized.title, seo: normalized.seo, bullets: normalized.bullets, tags: normalized.tags });
 
     const [productRow] = await db.insert(products).values({
+      organizationId,
       runId: run.id, opportunityId: winnerRow?.id ?? null, title: normalized.title, slug: normalized.slug, description: normalized.description,
       bullets: normalized.bullets, tags: normalized.tags, seo: normalized.seo, images: normalized.images, blueprint: normalized.blueprint ?? {},
       unitCost: normalized.unitCost, shippingCost: normalized.shippingCost, price: normalized.price, currency: normalized.currency, status: "draft",
     }).returning();
 
-    await db.insert(variants).values(normalized.variants.map((v) => ({ productId: productRow.id, sku: v.sku, options: v.options, cost: v.cost, price: v.price, inventory: v.inventory })));
+    await db.insert(variants).values(normalized.variants.map((v) => ({ organizationId, productId: productRow.id, sku: v.sku, options: v.options, cost: v.cost, price: v.price, inventory: v.inventory })));
     normalized.id = productRow.id;
     await step("Product Builder", "persist_product", `Product #${productRow.id} created with ${normalized.variants.length} variants`, { productId: productRow.id, variants: normalized.variants });
 
     const pod = blueprint.provider;
-    const upload = await commerce.uploadMedia(pod, normalized, { runId: run.id });
-    const podCreate = await commerce.createProduct(pod, normalized, { runId: run.id });
-    const podPublish = await commerce.publish(pod, normalized, podCreate.externalId ?? "", { runId: run.id });
-    await db.insert(listings).values({ productId: productRow.id, providerId: pod, externalId: podCreate.externalId, url: podPublish.url, status: podPublish.ok ? "published" : "failed", price: plan.base, message: `manufacturing route · ${providerMode(pod)}` });
+    const callContext = { organizationId, runId: run.id };
+    const upload = await commerce.uploadMedia(pod, normalized, callContext);
+    const podCreate = await commerce.createProduct(pod, normalized, callContext);
+    const podPublish = await commerce.publish(pod, normalized, podCreate.externalId ?? "", callContext);
+    await db.insert(listings).values({ organizationId, productId: productRow.id, providerId: pod, externalId: podCreate.externalId, url: podPublish.url, status: podPublish.ok ? "published" : "failed", price: plan.base, message: `manufacturing route · ${providerMode(pod)}` });
     await step("Fulfillment Router", "register_manufacturer", `${getProvider(pod).name} product ${podCreate.externalId} registered and ready to manufacture`, { uploadRequest: upload.request, createRequest: podCreate.request, publishRequest: podPublish.request, mode: podCreate.mode });
 
     const published: { provider: string; externalId: string; url: string; price: number; mode: string }[] = [];
     for (const channel of input.channels) {
       const channelPrice = plan.perChannel[channel]?.price ?? plan.base;
       const priced: NormalizedProduct = { ...normalized, price: channelPrice, variants: normalized.variants.map((v) => ({ ...v, price: Number((v.price + (channelPrice - plan.base)).toFixed(2)) })) };
-      const create = await commerce.createProduct(channel, priced, { runId: run.id });
-      await commerce.uploadMedia(channel, priced, { runId: run.id });
-      await commerce.setPrice(channel, create.externalId ?? "", channelPrice, { runId: run.id });
-      await commerce.setInventory(channel, create.externalId ?? "", 250, { runId: run.id });
-      const pub = await commerce.publish(channel, priced, create.externalId ?? "", { runId: run.id });
-      await db.insert(listings).values({ productId: productRow.id, providerId: channel, externalId: create.externalId, url: pub.url, status: pub.ok ? "published" : "failed", price: channelPrice, message: `${providerMode(channel)} · net margin ${(100 * (plan.perChannel[channel]?.netMargin ?? 0)).toFixed(1)}%` });
+      const create = await commerce.createProduct(channel, priced, callContext);
+      await commerce.uploadMedia(channel, priced, callContext);
+      await commerce.setPrice(channel, create.externalId ?? "", channelPrice, callContext);
+      await commerce.setInventory(channel, create.externalId ?? "", 250, callContext);
+      const pub = await commerce.publish(channel, priced, create.externalId ?? "", callContext);
+      await db.insert(listings).values({ organizationId, productId: productRow.id, providerId: channel, externalId: create.externalId, url: pub.url, status: pub.ok ? "published" : "failed", price: channelPrice, message: `${providerMode(channel)} · net margin ${(100 * (plan.perChannel[channel]?.netMargin ?? 0)).toFixed(1)}%` });
       published.push({ provider: channel, externalId: create.externalId ?? "", url: pub.url ?? "", price: channelPrice, mode: pub.mode });
       await step("Channel Publisher", `publish:${channel}`, `${getProvider(channel).name} → ${pub.ok ? "live" : "failed"} at $${channelPrice.toFixed(2)} (${pub.mode})`, { provider: channel, protocol: getProvider(channel).protocol, calls: [create.request, pub.request], externalId: create.externalId, url: pub.url }, pub.ok ? "ok" : "error");
     }
@@ -129,7 +135,7 @@ export async function executeGoal(input: RunInput): Promise<number> {
     await db.update(runs).set({ status: "succeeded", completedAt: new Date(), summary, fulfillmentProvider: pod }).where(eq(runs.id, run.id));
     return run.id;
   } catch (err) {
-    await db.insert(runSteps).values({ runId: run.id, idx: idx++, agent: "Commerce Brain", action: "abort", status: "error", summary: String(err instanceof Error ? err.message : err), detail: {}, durationMs: 0 });
+    await db.insert(runSteps).values({ organizationId, runId: run.id, idx: idx++, agent: "Commerce Brain", action: "abort", status: "error", summary: String(err instanceof Error ? err.message : err), detail: {}, durationMs: 0 });
     await db.update(runs).set({ status: "failed", completedAt: new Date() }).where(eq(runs.id, run.id));
     return run.id;
   }
