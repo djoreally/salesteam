@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 
 const LINKS = [
   { href: "/", label: "Mission Control", hint: "goal → launch" },
-  { href: "/providers", label: "Providers", hint: "capability matrix" },
+  { href: "/product-studio", label: "Product Studio", hint: "design · mockup · publish" },
+  { href: "/providers", label: "Stores & Fulfillment", hint: "connect your accounts" },
   { href: "/catalog", label: "Catalog", hint: "products & listings" },
-  { href: "/operations", label: "Operations", hint: "orders · fulfill · optimize" },
-  { href: "/api-surface", label: "API Surface", hint: "commerce.* primitives" },
+  { href: "/operations", label: "Orders & Operations", hint: "orders · fulfill · optimize" },
+  { href: "/onboarding", label: "Manage Setup", hint: "stores · fulfillment" },
   { href: "/settings", label: "Settings", hint: "workspace & controls" },
 ];
 
