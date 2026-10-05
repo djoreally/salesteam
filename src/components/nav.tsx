@@ -9,10 +9,17 @@ const LINKS = [
   { href: "/catalog", label: "Catalog", hint: "products & listings" },
   { href: "/operations", label: "Operations", hint: "orders · fulfill · optimize" },
   { href: "/api-surface", label: "API Surface", hint: "commerce.* primitives" },
+  { href: "/settings", label: "Settings", hint: "workspace & controls" },
 ];
 
 export function Nav() {
   const pathname = usePathname();
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
+
   return (
     <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:gap-0.5 lg:pb-5">
       {LINKS.map((l) => {
@@ -32,6 +39,10 @@ export function Nav() {
           </Link>
         );
       })}
+      <button onClick={logout} className="shrink-0 rounded-lg px-3 py-2 text-left text-sm text-zinc-500 transition hover:bg-zinc-800/60 hover:text-zinc-200">
+        <span className="block font-medium">Sign out</span>
+        <span className="hidden text-[11px] text-zinc-600 lg:block">end this session</span>
+      </button>
     </nav>
   );
 }
