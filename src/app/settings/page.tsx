@@ -1,10 +1,13 @@
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
+import { CredentialManager } from "@/components/credential-manager";
 import { PageHeader } from "@/components/ui";
 import { SettingsForm } from "@/components/settings-form";
 import { db } from "@/db";
 import { organizations, settings } from "@/db/infrastructure";
 import { getCurrentSession } from "@/lib/auth/session";
+import { PROVIDERS } from "@/lib/commerce/registry";
+import { credentialStatus } from "@/lib/credentials/vault";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +19,16 @@ export default async function SettingsPage() {
   if (!organization) redirect("/login");
   const rows = await db.select().from(settings).where(eq(settings.organizationId, session.organizationId));
   const values = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+
+  const providerRows = PROVIDERS.filter((provider) => provider.envKeys.length > 0)
+    .sort((a, b) => a.priority.localeCompare(b.priority) || a.name.localeCompare(b.name));
+  const statuses = await Promise.all(providerRows.map((provider) => credentialStatus(session.organizationId, provider.id)));
+  const credentials = providerRows.map((provider, index) => ({
+    id: provider.id,
+    name: provider.name,
+    priority: provider.priority,
+    ...statuses[index],
+  }));
 
   return (
     <div>
@@ -29,6 +42,7 @@ export default async function SettingsPage() {
         status={organization.status}
         initialSettings={values}
       />
+      <CredentialManager initial={credentials} />
     </div>
   );
 }
