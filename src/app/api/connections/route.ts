@@ -24,7 +24,7 @@ export async function POST(req: Request) {
   const session = await getCurrentSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = (await req.json()) as { providerId?: string; state?: string };
+  const body = (await req.json().catch(() => ({}))) as { providerId?: string; state?: string };
   if (!body.providerId || !body.state) {
     return Response.json({ error: "providerId and state are required" }, { status: 400 });
   }
@@ -34,7 +34,6 @@ export async function POST(req: Request) {
     eq(connections.organizationId, session.organizationId),
     eq(connections.providerId, body.providerId),
   );
-
   const [current] = await db.select().from(connections).where(scope);
   if (!current) return Response.json({ error: "Provider not registered" }, { status: 404 });
 
@@ -43,6 +42,13 @@ export async function POST(req: Request) {
     return Response.json(
       { error: `Invalid transition: ${current.state} → ${body.state}. Allowed: ${allowed.join(", ")}` },
       { status: 403 },
+    );
+  }
+
+  if (body.state === "connected" && !current.credentialsPresent) {
+    return Response.json(
+      { error: "Save all required provider credentials before connecting." },
+      { status: 400 },
     );
   }
 
@@ -68,6 +74,7 @@ export async function POST(req: Request) {
     .update(connections)
     .set({
       state: body.state as typeof connections.$inferInsert.state,
+      mode: body.state === "production_enabled" ? "live" : "sandbox",
       updatedAt: new Date(),
       productionEnabledAt: body.state === "production_enabled" ? new Date() : current.productionEnabledAt,
       certifiedAt: body.state === "certified" ? new Date() : current.certifiedAt,
