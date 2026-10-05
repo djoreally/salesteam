@@ -18,7 +18,7 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   hashedPassword: text("hashed_password").notNull(),
   name: text("name").notNull(),
-  role: text("role").notNull().default("admin"), // admin | member | viewer
+  role: text("role").notNull().default("admin"),
   emailVerified: boolean("email_verified").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -28,8 +28,8 @@ export const organizations = pgTable("organizations", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
-  plan: text("plan").notNull().default("starter"), // starter | professional | enterprise
-  status: text("status").notNull().default("trial"), // trial | active | suspended | cancelled
+  plan: text("plan").notNull().default("starter"),
+  status: text("status").notNull().default("trial"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -42,6 +42,15 @@ export const workspaceMemberships = pgTable("workspace_memberships", {
   invitedBy: integer("invited_by"),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const authSessions = pgTable("auth_sessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const settings = pgTable("settings", {
@@ -60,7 +69,7 @@ export const credentialVault = pgTable("credential_vault", {
   userId: integer("user_id").notNull(),
   providerId: text("provider_id").notNull(),
   encryptedSecret: text("encrypted_secret").notNull(),
-  secretName: text("secret_name").notNull(), // e.g. "SHOPIFY_ADMIN_TOKEN", "WOO_CONSUMER_KEY"
+  secretName: text("secret_name").notNull(),
   scope: jsonb("scope").$type<string[]>().notNull().default([]),
   rotatedAt: timestamp("rotated_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -70,7 +79,7 @@ export const credentialVault = pgTable("credential_vault", {
 export const onboardingState = pgTable("onboarding_state", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id").notNull(),
-  step: text("step").notNull(), // account_setup | connect_woocommerce | connect_printify | first_run | complete
+  step: text("step").notNull(),
   completedSteps: jsonb("completed_steps").$type<string[]>().notNull().default([]),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
