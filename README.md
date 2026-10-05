@@ -16,3 +16,5 @@ Designed for Next.js deployment on Vercel. Configure `DATABASE_URL` and only the
 Deployment source: GitHub `main` → Vercel production.
 
 Production database: Neon PostgreSQL.
+
+Schema initialization: Drizzle against Neon.
