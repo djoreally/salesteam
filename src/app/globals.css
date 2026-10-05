@@ -1,1 +1,55 @@
 @import "tailwindcss";
+
+:root {
+  --st-bg: #f7f8fc;
+  --st-surface: #ffffff;
+  --st-surface-soft: #f0f3f9;
+  --st-border: #dfe5ef;
+  --st-text: #172033;
+  --st-muted: #667085;
+  --st-primary: #6d5dfc;
+  --st-primary-soft: #eeebff;
+  --st-cyan: #0ea5e9;
+  --st-green: #10b981;
+  --st-orange: #f59e0b;
+  --st-pink: #ec4899;
+  --st-radius: 18px;
+}
+
+html {
+  background: var(--st-bg);
+}
+
+body {
+  background: var(--st-bg);
+  color: var(--st-text);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.st-label {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.st-body {
+  font-size: 1rem;
+  line-height: 1.75rem;
+}
+
+.st-heading {
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  line-height: 1.15;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+
+.st-hero {
+  font-size: clamp(2.5rem, 7vw, 5.25rem);
+  line-height: 0.98;
+  font-weight: 800;
+  letter-spacing: -0.045em;
+}
