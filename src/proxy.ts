@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/signup"];
-const PUBLIC_API_PREFIXES = ["/api/auth/login", "/api/auth/signup"];
+const PUBLIC_PATHS = ["/", "/login", "/signup", "/forgot-password", "/reset-password"];
+const PUBLIC_API_PREFIXES = [
+  "/api/auth/login",
+  "/api/auth/signup",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
+];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasSession = Boolean(request.cookies.get("salesteam_session")?.value);
 
   if (PUBLIC_PATHS.includes(pathname)) {
-    if (hasSession) return NextResponse.redirect(new URL("/", request.url));
+    if (hasSession && ["/login", "/signup", "/forgot-password", "/reset-password"].includes(pathname)) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
     return NextResponse.next();
   }
 
