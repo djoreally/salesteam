@@ -23,6 +23,9 @@ export async function GET() {
 export async function POST(req: Request) {
   const session = await getCurrentSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!["owner", "admin"].includes(session.membershipRole)) {
+    return Response.json({ error: "Workspace owner or admin access is required" }, { status: 403 });
+  }
 
   const body = (await req.json().catch(() => ({}))) as { providerId?: string; state?: string };
   if (!body.providerId || !body.state) {
@@ -52,7 +55,7 @@ export async function POST(req: Request) {
     );
   }
 
-  if (body.state === "production_enabled" && current.state !== "production_enabled") {
+  if (body.state === "certified" || body.state === "production_enabled") {
     const [cert] = await db
       .select()
       .from(providerCertifications)
@@ -64,7 +67,7 @@ export async function POST(req: Request) {
       );
     if (!cert || !cert.certified) {
       return Response.json(
-        { error: "Certification required before production_enabled. Provider must pass full test suite." },
+        { error: "Full provider certification is required before certified or production_enabled state." },
         { status: 403 },
       );
     }
