@@ -1,7 +1,6 @@
 import { db } from "@/db";
 import { connections, providerCertifications } from "@/db/schema";
 import { BESPOKE_ADAPTERS } from "@/lib/commerce/adapters";
-import { missingCredentials, providerMode } from "@/lib/commerce/control-plane";
 import { PROVIDERS } from "@/lib/commerce/registry";
 import { and, eq } from "drizzle-orm";
 
@@ -17,7 +16,7 @@ export async function ensureConnections(organizationId: number) {
         providerId: p.id,
         label: p.name,
         state: "registered" as const,
-        mode: providerMode(p.id),
+        mode: "sandbox" as const,
         scopes: p.scopes,
         credentialsPresent: false,
         shopRef: null,
