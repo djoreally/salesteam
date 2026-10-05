@@ -90,24 +90,28 @@ export async function saveProviderCredentials(args: {
 
   await db.transaction(async (tx) => {
     for (const [secretName, value] of entries) {
+      const now = new Date();
       await tx
-        .delete(credentialVault)
-        .where(
-          and(
-            eq(credentialVault.organizationId, args.organizationId),
-            eq(credentialVault.providerId, args.providerId),
-            eq(credentialVault.secretName, secretName),
-          ),
-        );
-      await tx.insert(credentialVault).values({
-        organizationId: args.organizationId,
-        userId: args.userId,
-        providerId: args.providerId,
-        secretName,
-        encryptedSecret: encryptCredential(args.organizationId, value.trim()),
-        scope: [],
-        rotatedAt: new Date(),
-      });
+        .insert(credentialVault)
+        .values({
+          organizationId: args.organizationId,
+          userId: args.userId,
+          providerId: args.providerId,
+          secretName,
+          encryptedSecret: encryptCredential(args.organizationId, value.trim()),
+          scope: [],
+          rotatedAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [credentialVault.organizationId, credentialVault.providerId, credentialVault.secretName],
+          set: {
+            userId: args.userId,
+            encryptedSecret: encryptCredential(args.organizationId, value.trim()),
+            rotatedAt: now,
+            updatedAt: now,
+          },
+        });
     }
   });
   return credentialStatus(args.organizationId, args.providerId);
