@@ -1,7 +1,8 @@
 import { db } from "@/db";
-import { apiCalls } from "@/db/schema";
+import { apiCalls, connections } from "@/db/schema";
 import { authenticateProvider, credentialsFromEnvironment, type AuthResult } from "@/lib/auth/transports";
 import { getProviderCredentials } from "@/lib/credentials/vault";
+import { and, eq } from "drizzle-orm";
 import { getAdapter, type AdapterContext } from "./adapters";
 import { getProvider } from "./registry";
 import type { Capability, FulfillmentResult, NormalizedProduct, ProviderRequest, ProviderResult } from "./types";
@@ -32,10 +33,32 @@ export function missingCredentials(providerId: string) {
 }
 
 async function resolveAuth(providerId: string, ctx: CallContext): Promise<AuthResult> {
-  const credentials = ctx.organizationId
-    ? await getProviderCredentials(ctx.organizationId, providerId)
-    : credentialsFromEnvironment(providerId);
-  return authenticateProvider(providerId, credentials);
+  if (!ctx.organizationId) {
+    return authenticateProvider(providerId, credentialsFromEnvironment(providerId));
+  }
+
+  const credentials = await getProviderCredentials(ctx.organizationId, providerId);
+  const auth = authenticateProvider(providerId, credentials);
+  if (!auth.ok) return auth;
+
+  const [connection] = await db
+    .select({ state: connections.state })
+    .from(connections)
+    .where(
+      and(
+        eq(connections.organizationId, ctx.organizationId),
+        eq(connections.providerId, providerId),
+      ),
+    );
+  if (connection?.state !== "production_enabled") {
+    return {
+      ...auth,
+      ok: false,
+      mode: "sandbox",
+      error: `Provider is ${connection?.state ?? "not registered"}; production_enabled is required for live writes`,
+    };
+  }
+  return auth;
 }
 
 function adapterContext(ctx: CallContext, auth: AuthResult): AdapterContext {
@@ -73,24 +96,9 @@ async function execute(
         body: request.body ? JSON.stringify(request.body) : undefined,
       });
       const data = await response.json().catch(() => ({})) as Record<string, unknown>;
-      result = {
-        ok: response.ok,
-        mode,
-        statusCode: response.status,
-        data,
-        request,
-        latencyMs: Date.now() - started,
-      };
+      result = { ok: response.ok, mode, statusCode: response.status, data, request, latencyMs: Date.now() - started };
     } catch (error) {
-      result = {
-        ok: false,
-        mode,
-        statusCode: 599,
-        data: { error: String(error) },
-        request,
-        latencyMs: Date.now() - started,
-        message: String(error),
-      };
+      result = { ok: false, mode, statusCode: 599, data: { error: String(error) }, request, latencyMs: Date.now() - started, message: String(error) };
     }
   } else {
     const synthetic = synth(seed);
@@ -133,28 +141,21 @@ export const commerce = {
       return { externalId: ref.externalId, url: ref.url, data: { id: ref.externalId, handle: product.slug, status: "draft" } };
     });
   },
-
   async uploadMedia(providerId: string, product: NormalizedProduct, ctx: CallContext = {}) {
     const auth = await resolveAuth(providerId, ctx);
     const adapter = getAdapter(providerId);
-    return execute(providerId, "media.write", adapter.uploadMedia(product, adapterContext(ctx, auth)), ctx, auth, (seed) => ({
-      externalId: `media_${seed}`,
-      data: { uploaded: product.images.length, ids: product.images.map((_image, index) => `media_${seed + index}`) },
-    }));
+    return execute(providerId, "media.write", adapter.uploadMedia(product, adapterContext(ctx, auth)), ctx, auth, (seed) => ({ externalId: `media_${seed}`, data: { uploaded: product.images.length, ids: product.images.map((_image, index) => `media_${seed + index}`) } }));
   },
-
   async setPrice(providerId: string, externalId: string, price: number, ctx: CallContext = {}) {
     const auth = await resolveAuth(providerId, ctx);
     const adapter = getAdapter(providerId);
     return execute(providerId, "price.write", adapter.setPrice(externalId, price, adapterContext(ctx, auth)), ctx, auth, () => ({ externalId, data: { id: externalId, price } }));
   },
-
   async setInventory(providerId: string, externalId: string, quantity: number, ctx: CallContext = {}) {
     const auth = await resolveAuth(providerId, ctx);
     const adapter = getAdapter(providerId);
     return execute(providerId, "inventory.write", adapter.setInventory(externalId, quantity, adapterContext(ctx, auth)), ctx, auth, () => ({ externalId, data: { id: externalId, available: quantity } }));
   },
-
   async publish(providerId: string, product: NormalizedProduct, externalId: string, ctx: CallContext = {}) {
     const auth = await resolveAuth(providerId, ctx);
     const adapter = getAdapter(providerId);
@@ -163,36 +164,21 @@ export const commerce = {
       return { externalId, url: ref.url, data: { id: externalId, status: "published", url: ref.url } };
     });
   },
-
   async unpublish(providerId: string, product: NormalizedProduct, externalId: string, ctx: CallContext = {}) {
     const auth = await resolveAuth(providerId, ctx);
     const adapter = getAdapter(providerId);
     return execute(providerId, "publish", adapter.unpublish(externalId, adapterContext(ctx, auth)), ctx, auth, () => ({ externalId, data: { id: externalId, status: "unpublished" } }));
   },
-
   async listOrders(providerId: string, ctx: CallContext = {}) {
     const auth = await resolveAuth(providerId, ctx);
     const adapter = getAdapter(providerId);
     return execute(providerId, "orders.read", adapter.listOrders(adapterContext(ctx, auth)), ctx, auth, (seed) => ({ data: { count: seed % 4, orders: [] } }));
   },
-
   async fulfillOrder(providerId: string, orderRef: string, tracking: string, ctx: CallContext = {}): Promise<ProviderResult & { fulfillment: FulfillmentResult }> {
     const auth = await resolveAuth(providerId, ctx);
     const adapter = getAdapter(providerId);
-    const result = await execute(providerId, "fulfillment.write", adapter.fulfillOrder(orderRef, tracking, adapterContext(ctx, auth)), ctx, auth, (seed) => ({
-      externalId: `ful_${seed}`,
-      data: { id: `ful_${seed}`, status: "in_production", tracking },
-    }));
-    return {
-      ...result,
-      fulfillment: {
-        externalId: result.externalId ?? `ful_${orderRef}`,
-        status: "in_production",
-        carrier: "USPS",
-        tracking,
-        cost: 0,
-      },
-    };
+    const result = await execute(providerId, "fulfillment.write", adapter.fulfillOrder(orderRef, tracking, adapterContext(ctx, auth)), ctx, auth, (seed) => ({ externalId: `ful_${seed}`, data: { id: `ful_${seed}`, status: "in_production", tracking } }));
+    return { ...result, fulfillment: { externalId: result.externalId ?? `ful_${orderRef}`, status: "in_production", carrier: "USPS", tracking, cost: 0 } };
   },
 };
 
