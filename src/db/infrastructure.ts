@@ -6,6 +6,7 @@ import {
   serial,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -53,28 +54,42 @@ export const authSessions = pgTable("auth_sessions", {
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const settings = pgTable("settings", {
-  id: serial("id").primaryKey(),
-  organizationId: integer("organization_id").notNull(),
-  key: text("key").notNull(),
-  value: jsonb("value").notNull().default({}),
-  encrypted: boolean("encrypted").notNull().default(false),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const settings = pgTable(
+  "settings",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull(),
+    key: text("key").notNull(),
+    value: jsonb("value").notNull().default({}),
+    encrypted: boolean("encrypted").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("settings_org_key_uidx").on(table.organizationId, table.key)],
+);
 
-export const credentialVault = pgTable("credential_vault", {
-  id: serial("id").primaryKey(),
-  organizationId: integer("organization_id").notNull(),
-  userId: integer("user_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  encryptedSecret: text("encrypted_secret").notNull(),
-  secretName: text("secret_name").notNull(),
-  scope: jsonb("scope").$type<string[]>().notNull().default([]),
-  rotatedAt: timestamp("rotated_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const credentialVault = pgTable(
+  "credential_vault",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").notNull(),
+    userId: integer("user_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    encryptedSecret: text("encrypted_secret").notNull(),
+    secretName: text("secret_name").notNull(),
+    scope: jsonb("scope").$type<string[]>().notNull().default([]),
+    rotatedAt: timestamp("rotated_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("credential_vault_org_provider_secret_uidx").on(
+      table.organizationId,
+      table.providerId,
+      table.secretName,
+    ),
+  ],
+);
 
 export const onboardingState = pgTable("onboarding_state", {
   id: serial("id").primaryKey(),
