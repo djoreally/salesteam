@@ -6,21 +6,22 @@ import { and, eq } from "drizzle-orm";
 
 const VERSION = "v1";
 
-function keySource(): string {
-  const source = process.env.CREDENTIAL_VAULT_KEY || process.env.DATABASE_URL;
-  if (!source) throw new Error("Credential vault key is not configured");
-  return source;
+function keySources(): string[] {
+  const sources = [process.env.CREDENTIAL_VAULT_KEY, process.env.DATABASE_URL].filter((value): value is string => Boolean(value));
+  if (!sources.length) throw new Error("Credential vault key is not configured");
+  return Array.from(new Set(sources));
 }
 
-function keyForOrganization(organizationId: number): Buffer {
+function keyForOrganization(source: string, organizationId: number): Buffer {
   return createHash("sha256")
-    .update(`${keySource()}|salesteam-credential-vault|${organizationId}`)
+    .update(`${source}|salesteam-credential-vault|${organizationId}`)
     .digest();
 }
 
 export function encryptCredential(organizationId: number, plaintext: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", keyForOrganization(organizationId), iv);
+  const key = keyForOrganization(keySources()[0], organizationId);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
   const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return [VERSION, iv.toString("base64url"), tag.toString("base64url"), ciphertext.toString("base64url")].join(":");
@@ -29,9 +30,18 @@ export function encryptCredential(organizationId: number, plaintext: string): st
 export function decryptCredential(organizationId: number, encoded: string): string {
   const [version, ivRaw, tagRaw, ciphertextRaw] = encoded.split(":");
   if (version !== VERSION || !ivRaw || !tagRaw || !ciphertextRaw) throw new Error("Unsupported credential format");
-  const decipher = createDecipheriv("aes-256-gcm", keyForOrganization(organizationId), Buffer.from(ivRaw, "base64url"));
-  decipher.setAuthTag(Buffer.from(tagRaw, "base64url"));
-  return Buffer.concat([decipher.update(Buffer.from(ciphertextRaw, "base64url")), decipher.final()]).toString("utf8");
+
+  for (const source of keySources()) {
+    try {
+      const decipher = createDecipheriv("aes-256-gcm", keyForOrganization(source, organizationId), Buffer.from(ivRaw, "base64url"));
+      decipher.setAuthTag(Buffer.from(tagRaw, "base64url"));
+      return Buffer.concat([decipher.update(Buffer.from(ciphertextRaw, "base64url")), decipher.final()]).toString("utf8");
+    } catch {
+      // Try the next configured key source. This permits a controlled re-key from
+      // the temporary DATABASE_URL-derived key to CREDENTIAL_VAULT_KEY.
+    }
+  }
+  throw new Error("Unable to decrypt provider credential with configured vault keys");
 }
 
 export async function credentialStatus(organizationId: number, providerId: string) {
