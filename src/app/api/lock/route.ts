@@ -1,14 +1,18 @@
-import { CORE_V1 } from "@/lib/certification/milestones";
-import { getSecurityStatus } from "@/lib/auth/verification";
-import { CORE_V1_LOCK } from "@/lib/certification/lock";
-import { ensureConnections, ensureCertifications } from "@/lib/bootstrap";
 import { getCertifiedCapabilities } from "@/lib/auth/certification";
+import { getCurrentSession } from "@/lib/auth/session";
+import { getSecurityStatus } from "@/lib/auth/verification";
+import { ensureConnections, ensureCertifications } from "@/lib/bootstrap";
+import { CORE_V1_LOCK } from "@/lib/certification/lock";
+import { CORE_V1 } from "@/lib/certification/milestones";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const conns = await ensureConnections();
-  const certs = await ensureCertifications();
+  const session = await getCurrentSession();
+  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+  const conns = await ensureConnections(session.organizationId);
+  const certs = await ensureCertifications(session.organizationId);
 
   const milestoneStatus = {
     milestoneId: CORE_V1.id,
