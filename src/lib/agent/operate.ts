@@ -28,22 +28,26 @@ const CHANNEL_TRAFFIC: Record<string, number> = {
 const FIRST_NAMES = ["Dana", "Marcus", "Priya", "Luis", "Hana", "Theo", "Nina", "Omar", "Elle", "Jonas"];
 const CITIES = ["Philadelphia PA", "Austin TX", "Portland OR", "Chicago IL", "Tampa FL", "Denver CO", "Columbus OH"];
 
-/** Simulate one market tick: traffic → conversions → paid orders. */
-export async function simulateMarket(tick = 1) {
+export async function simulateMarket(organizationId: number, tick = 1) {
   const live = await db
     .select()
     .from(listings)
-    .where(eq(listings.status, "published"));
+    .where(and(eq(listings.organizationId, organizationId), eq(listings.status, "published")));
 
   const salesListings = live.filter((l) => PROVIDER_MAP[l.providerId] && PROVIDER_MAP[l.providerId].kind !== "pod");
   if (!salesListings.length) return { created: 0, orders: [] as number[] };
 
   const productIds = Array.from(new Set(salesListings.map((l) => l.productId)));
-  const prodRows = await db.select().from(products).where(inArray(products.id, productIds));
-  const varRows = await db.select().from(variants).where(inArray(variants.productId, productIds));
+  const prodRows = await db
+    .select()
+    .from(products)
+    .where(and(eq(products.organizationId, organizationId), inArray(products.id, productIds)));
+  const varRows = await db
+    .select()
+    .from(variants)
+    .where(and(eq(variants.organizationId, organizationId), inArray(variants.productId, productIds)));
 
   const createdIds: number[] = [];
-
   for (const listing of salesListings) {
     const product = prodRows.find((p) => p.id === listing.productId);
     if (!product || product.status === "killed") continue;
@@ -66,6 +70,7 @@ export async function simulateMarket(tick = 1) {
     const [row] = await db
       .insert(orders)
       .values({
+        organizationId,
         externalId: `${listing.providerId.slice(0, 3).toUpperCase()}-${seed % 900000 + 100000}`,
         providerId: listing.providerId,
         productId: product.id,
@@ -91,19 +96,27 @@ export async function simulateMarket(tick = 1) {
   return { created: createdIds.length, orders: createdIds };
 }
 
-/** Route every paid order to the right manufacturer and push tracking back. */
-export async function fulfillPending() {
-  const paid = await db.select().from(orders).where(eq(orders.status, "paid"));
+export async function fulfillPending(organizationId: number) {
+  const paid = await db
+    .select()
+    .from(orders)
+    .where(and(eq(orders.organizationId, organizationId), eq(orders.status, "paid")));
   const results: { orderId: number; pod: string; tracking: string }[] = [];
 
   for (const order of paid) {
-    const [product] = await db.select().from(products).where(eq(products.id, order.productId));
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(and(eq(products.organizationId, organizationId), eq(products.id, order.productId)));
     if (!product) continue;
+
     const pod = (product.blueprint?.provider as string) ?? "printify";
     const tracking = `9400${hash(`${order.id}:${order.externalId}`) % 10000000000}`;
+    const context = { organizationId };
 
-    const podRes = await commerce.fulfillOrder(pod, order.externalId, tracking, {});
+    const podRes = await commerce.fulfillOrder(pod, order.externalId, tracking, context);
     await db.insert(fulfillments).values({
+      organizationId,
       orderId: order.id,
       providerId: pod,
       externalId: podRes.fulfillment.externalId,
@@ -113,9 +126,11 @@ export async function fulfillPending() {
       cost: Number((product.unitCost + product.shippingCost).toFixed(2)),
     });
 
-    // Push tracking back to the sales channel so the buyer sees it.
-    await commerce.fulfillOrder(order.providerId, order.externalId, tracking, {});
-    await db.update(orders).set({ status: "fulfilled" }).where(eq(orders.id, order.id));
+    await commerce.fulfillOrder(order.providerId, order.externalId, tracking, context);
+    await db
+      .update(orders)
+      .set({ status: "fulfilled" })
+      .where(and(eq(orders.organizationId, organizationId), eq(orders.id, order.id)));
     results.push({ orderId: order.id, pod, tracking });
   }
 
@@ -131,11 +146,12 @@ export interface OptimizationOutcome {
   after: number;
 }
 
-/** Reprice winners, rescue thin-margin SKUs, kill the dead ones. */
-export async function optimize(): Promise<OptimizationOutcome[]> {
-  const prodRows = await db.select().from(products);
-  const orderRows = await db.select().from(orders);
-  const listRows = await db.select().from(listings);
+export async function optimize(organizationId: number): Promise<OptimizationOutcome[]> {
+  const [prodRows, orderRows, listRows] = await Promise.all([
+    db.select().from(products).where(eq(products.organizationId, organizationId)),
+    db.select().from(orders).where(eq(orders.organizationId, organizationId)),
+    db.select().from(listings).where(eq(listings.organizationId, organizationId)),
+  ]);
   const out: OptimizationOutcome[] = [];
 
   for (const product of prodRows) {
@@ -173,33 +189,49 @@ export async function optimize(): Promise<OptimizationOutcome[]> {
 
     const before = product.price;
     let after = before;
+    const context = { organizationId };
 
     if (action === "kill") {
       const mineListings = listRows.filter((l) => l.productId === product.id && l.status === "published");
-      for (const l of mineListings) {
+      for (const listing of mineListings) {
         const normalized = { slug: product.slug } as unknown as NormalizedProduct;
-        await commerce.unpublish(l.providerId, normalized, l.externalId ?? "", {});
-        await db.update(listings).set({ status: "unpublished" }).where(eq(listings.id, l.id));
+        await commerce.unpublish(listing.providerId, normalized, listing.externalId ?? "", context);
+        await db
+          .update(listings)
+          .set({ status: "unpublished" })
+          .where(and(eq(listings.organizationId, organizationId), eq(listings.id, listing.id)));
       }
-      await db.update(products).set({ status: "killed" }).where(eq(products.id, product.id));
+      await db
+        .update(products)
+        .set({ status: "killed" })
+        .where(and(eq(products.organizationId, organizationId), eq(products.id, product.id)));
     } else if (multiplier !== 1) {
       after = Number((Math.floor(before * multiplier) + 0.99).toFixed(2));
       const mineListings = listRows.filter((l) => l.productId === product.id && l.status === "published");
-      for (const l of mineListings) {
-        const newPrice = Number((Math.floor(l.price * multiplier) + 0.99).toFixed(2));
-        await commerce.setPrice(l.providerId, l.externalId ?? "", newPrice, {});
-        await db.update(listings).set({ price: newPrice, lastSyncedAt: new Date() }).where(eq(listings.id, l.id));
+      for (const listing of mineListings) {
+        const newPrice = Number((Math.floor(listing.price * multiplier) + 0.99).toFixed(2));
+        await commerce.setPrice(listing.providerId, listing.externalId ?? "", newPrice, context);
+        await db
+          .update(listings)
+          .set({ price: newPrice, lastSyncedAt: new Date() })
+          .where(and(eq(listings.organizationId, organizationId), eq(listings.id, listing.id)));
       }
-      await db.update(products).set({ price: after }).where(eq(products.id, product.id));
+      await db
+        .update(products)
+        .set({ price: after })
+        .where(and(eq(products.organizationId, organizationId), eq(products.id, product.id)));
     }
 
-    await db.insert(decisions).values({ productId: product.id, action, reason, before, after });
+    await db.insert(decisions).values({ organizationId, productId: product.id, action, reason, before, after });
     out.push({ productId: product.id, title: product.title, action, reason, before, after });
   }
 
   return out;
 }
 
-export async function listingsForProduct(productId: number) {
-  return db.select().from(listings).where(and(eq(listings.productId, productId)));
+export async function listingsForProduct(organizationId: number, productId: number) {
+  return db
+    .select()
+    .from(listings)
+    .where(and(eq(listings.organizationId, organizationId), eq(listings.productId, productId)));
 }
