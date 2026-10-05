@@ -4,7 +4,6 @@ import { MissionControl, type ChannelOption } from "@/components/mission-control
 import { Badge, Card, CardTitle, money, PageHeader, pct, Stat } from "@/components/ui";
 import { getCurrentSession } from "@/lib/auth/session";
 import { ensureConnections } from "@/lib/bootstrap";
-import { providerMode } from "@/lib/commerce/control-plane";
 import { PROVIDERS } from "@/lib/commerce/registry";
 import { getDashboard } from "@/lib/queries";
 
@@ -31,14 +30,17 @@ export default async function Home() {
   const dash = await getDashboard(session.organizationId);
 
   const options: ChannelOption[] = PROVIDERS.filter((p) => p.capabilities.includes("publish") || p.capabilities.includes("pod.manufacture"))
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      kind: p.kind,
-      priority: p.priority,
-      mode: providerMode(p.id),
-      authorized: ["certified", "production_enabled"].includes(conns.find((c) => c.providerId === p.id)?.state ?? ""),
-    }))
+    .map((p) => {
+      const connection = conns.find((c) => c.providerId === p.id);
+      return {
+        id: p.id,
+        name: p.name,
+        kind: p.kind,
+        priority: p.priority,
+        mode: connection?.mode ?? "sandbox",
+        authorized: ["certified", "production_enabled"].includes(connection?.state ?? ""),
+      };
+    })
     .sort((a, b) => a.priority.localeCompare(b.priority) || a.name.localeCompare(b.name));
 
   return (
