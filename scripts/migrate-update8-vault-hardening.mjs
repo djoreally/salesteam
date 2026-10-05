@@ -27,9 +27,21 @@ try {
 
     CREATE UNIQUE INDEX IF NOT EXISTS credential_vault_org_provider_secret_uidx
       ON credential_vault(organization_id, provider_id, secret_name);
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx
+      ON password_reset_tokens(user_id);
   `);
   await client.query("COMMIT");
-  console.log("Update 8 vault hardening migration complete");
+  console.log("Update 8 vault/auth hardening migration complete");
 } catch (error) {
   await client.query("ROLLBACK");
   throw error;
