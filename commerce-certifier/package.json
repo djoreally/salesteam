@@ -1,0 +1,13 @@
+{
+  "name": "commerce-certifier",
+  "version": "1.0.0",
+  "description": "External certification runner for Commerce Core v1",
+  "scripts": {
+    "test:core-v1": "node bin/test-core-v1.js",
+    "sign": "node bin/sign-receipt.js",
+    "verify": "node bin/verify-receipt.js",
+    "clean": "node bin/clean-test-data.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
