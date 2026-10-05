@@ -5,11 +5,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Nav } from "@/components/nav";
 
+const PUBLIC_PATHS = new Set(["/", "/login", "/signup", "/forgot-password", "/reset-password"]);
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const authPage = pathname === "/login" || pathname === "/signup";
+  const publicPage = PUBLIC_PATHS.has(pathname);
 
-  if (authPage) return <main className="min-h-screen">{children}</main>;
+  if (publicPage) return <main className="min-h-screen">{children}</main>;
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
@@ -17,8 +19,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-3 px-5 py-5">
           <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-emerald-400 to-cyan-500 text-sm font-black text-black">ST</div>
           <div className="leading-tight">
-            <Link href="/" className="block text-sm font-semibold text-zinc-100">SalesTeam</Link>
-            <span className="text-[11px] text-zinc-500">commerce control plane</span>
+            <Link href="/dashboard" className="block text-sm font-semibold text-zinc-100">SalesTeam</Link>
+            <span className="text-[11px] text-zinc-500">commerce operating system</span>
           </div>
         </div>
         <Nav />
