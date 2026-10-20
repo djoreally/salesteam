@@ -3,17 +3,16 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { organizations, settings } from "@/db/infrastructure";
 import { getCurrentSession } from "@/lib/auth/session";
+import { getWorkspaceSettings } from "@/lib/operations";
 
 export async function GET() {
   const session = await getCurrentSession();
   if (!session) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
 
-  const [organization] = await db.select().from(organizations).where(eq(organizations.id, session.organizationId));
-  const rows = await db.select().from(settings).where(eq(settings.organizationId, session.organizationId));
-  const values = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+  const { organization, settings: values } = await getWorkspaceSettings(session.organizationId);
 
   return NextResponse.json({
-    organization: organization ? { id: organization.id, name: organization.name, slug: organization.slug, plan: organization.plan, status: organization.status } : null,
+    organization,
     settings: values,
   });
 }
