@@ -2,11 +2,13 @@ import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { AccountSettings } from "@/components/account-settings";
+import { ApiKeyManager, type ApiKeyRow } from "@/components/api-key-manager";
 import { CredentialManager } from "@/components/credential-manager";
 import { PageHeader } from "@/components/ui";
 import { SettingsForm } from "@/components/settings-form";
 import { db } from "@/db";
 import { organizations, settings } from "@/db/infrastructure";
+import { listApiKeys } from "@/lib/auth/api-key";
 import { getCurrentSession } from "@/lib/auth/session";
 import { PROVIDERS } from "@/lib/commerce/registry";
 import { credentialStatus } from "@/lib/credentials/vault";
@@ -34,6 +36,14 @@ export default async function SettingsPage() {
     priority: provider.priority,
     ...statuses[index],
   }));
+  const apiKeyRows: ApiKeyRow[] = (await listApiKeys(session.organizationId)).map((key) => ({
+    id: key.id,
+    name: key.name,
+    keyPrefix: key.keyPrefix,
+    createdAt: key.createdAt.toISOString(),
+    lastUsedAt: key.lastUsedAt?.toISOString() ?? null,
+    revokedAt: key.revokedAt?.toISOString() ?? null,
+  }));
 
   return (
     <div>
@@ -44,6 +54,8 @@ export default async function SettingsPage() {
       />
       <AccountSettings name={session.userName} email={session.userEmail} />
       <SettingsForm organizationName={organization.name} plan={organization.plan} status={organization.status} initialSettings={values} />
+      <div className="px-6 pb-2"><h2 className="text-sm font-semibold text-zinc-200">Connect your Muse (API keys)</h2><p className="mt-1 text-xs text-zinc-500">Create a key, add SalesTeam as a custom connector in Muse, and your Muse can run this workspace for you. Step-by-step: <Link href="/connect" className="text-sky-400 hover:underline">connection guide</Link>.</p></div>
+      <div className="mx-6 mb-6"><ApiKeyManager initial={apiKeyRows} /></div>
       <div className="px-6 pb-2"><h2 className="text-sm font-semibold text-zinc-200">Connected account credentials</h2><p className="mt-1 text-xs text-zinc-500">Only the stores and fulfillment services selected for this workspace are shown here. Secrets remain encrypted and are never returned to the browser.</p></div>
       <CredentialManager initial={credentials} />
     </div>

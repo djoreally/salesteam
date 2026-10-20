@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/providers", label: "Stores & Fulfillment", hint: "connected accounts" },
   { href: "/catalog", label: "Catalog", hint: "products & listings" },
   { href: "/operations", label: "Operations", hint: "orders · fulfill · optimize" },
+  { href: "/connect", label: "Connect Muse", hint: "run SalesTeam from Muse · MCP" },
   { href: "/settings", label: "Settings", hint: "account · workspace · integrations" },
 ];
 

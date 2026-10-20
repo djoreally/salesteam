@@ -6,6 +6,9 @@ const PUBLIC_API_PREFIXES = [
   "/api/auth/signup",
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
+  // The MCP server authenticates with workspace API keys (Bearer), not the
+  // session cookie — its route handler enforces that auth itself.
+  "/api/mcp",
 ];
 
 export function proxy(request: NextRequest) {
